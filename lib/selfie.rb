@@ -92,7 +92,7 @@ class Selfie
   end
 
   def snap
-    log.info "Target account: #{@target_account}"
+    log.info "Snap Target account: #{@target_account}"
     creds = assume(account: @target_account)
     ec2 = Aws::EC2::Client.new(region: @region, credentials: creds)
 
@@ -105,5 +105,71 @@ class Selfie
     ec2 = Aws::EC2::Client.new(region: @region, credentials: creds)
     new_snapshot_ids = copy_snapshot(ec2: ec2, snapshots: snapshots)
     wait(ec2: ec2, snapshot_ids: new_snapshot_ids)
+  end
+
+
+  def capture
+    log.info "Capture Security Configuration Target account: #{@target_account}"
+    data = get_ec2
+    binding.pry
+    send_to_s3(data)
+  end
+
+  def send_to_s3(out) # expects the out hash
+    log.info "Writing captured info for account: #{@target_account} to S3"
+    creds = assume(account: @target_account)
+    s3 = Aws::S3::Client.new(region: @region, credentials: creds)
+
+    # write out the structures in 'out' to s3 objects, one object for each top-level key
+    out.each { |k,v|
+      s3.put_object(bucket: @bucket, key: @ticket_id + "/" + @target_account + "/" + k, body: v)
+    }
+
+  end
+
+  def get_ec2
+    log.info "Getting EC2 info - Target account: #{@target_account}"
+    creds = assume(account: @target_account)
+    ec2 = Aws::EC2::Client.new(region: @region, credentials: creds)
+
+    resp = {}
+    resp['account_attributes'] = ec2.describe_account_attributes # don't need the options hash if we want everything... ({dry_run: false,attribute_names: ["supported-platforms","default-vpc","max-instances","vpc-max-security-groups-per-interface","max-elastic-ips","vpc-max-elastic-ips"]})
+    resp['addresses'] = ec2.describe_addresses
+    resp['availability_zones'] = ec2.describe_availability_zones
+    resp['conversion_tasks'] = ec2.describe_conversion_tasks
+    resp['customer_gateways'] = ec2.describe_customer_gateways
+    resp['dhcp_options'] = ec2.describe_dhcp_options
+    resp['export_tasks'] = ec2.describe_export_tasks
+    resp['flow_logs'] = ec2.describe_flow_logs
+    resp['hosts'] = ec2.describe_hosts
+    resp['images'] = ec2.describe_images(executable_users: ['self'])
+    resp['import_image_tasks'] = ec2.describe_import_image_tasks
+    resp['import_snapshot_tasks'] = ec2.describe_import_snapshot_tasks
+    resp['instances'] = ec2.describe_instances
+    resp['internet_gateways'] = ec2.describe_internet_gateways
+    resp['key_pairs'] = ec2.describe_key_pairs
+    resp['nat_gateways'] = ec2.describe_nat_gateways
+    resp['network_acls'] = ec2.describe_network_acls
+    resp['network_interfaces'] = ec2.describe_network_interfaces
+    resp['route_tables'] = ec2.describe_route_tables
+    resp['security_groups'] = ec2.describe_security_groups
+    resp['snapshots'] = ec2.describe_snapshots
+    resp['subnets'] = ec2.describe_subnets
+    resp['volumes'] = ec2.describe_volumes
+    resp['vpc_endpoints'] = ec2.describe_vpc_endpoints
+    resp['vpc_peering_connections'] = ec2.describe_vpc_peering_connections
+    resp['vpcs'] = ec2.describe_vpcs
+    resp['vpn_gateways'] = ec2.describe_vpn_gateways
+
+    # this would be a pain, would have to iterate across every instance and every attribute
+    # describe_instance_attribute
+
+    # convert all of those annoying aws-sdk data structures into simple Ruby hashes
+    out[:ec2_capture] = {}
+    resp.each_value { |v| out[:ec2_capture].merge!(v.to_h) }
+
+    # give the hash back as the result of the method
+    return out
+
   end
 end
